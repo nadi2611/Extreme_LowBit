@@ -37,6 +37,21 @@ python ./main.py -a resnet18_imagenet --action QUANTIZE --x_bits 8 --w_bits 8
 ```
 We support the following models: `resnet18_imagenet`, `resnet34_imagenet`, `resnet50_imagenet`, `resnet101_imagenet`, `googlenet_imagenet`, `inception_imagenet`, `densenet_imagenet`.
 
+## Floating Point Model Quantization
+
+Important Note - Please Change the floating, man and exp variable values in QuantConv2d.py file to the desired representations.
+
+                bool floating - floating quantization or not
+                int man - mantissy value
+                int exp - exponent value
+        
+To quantize the models, execute the following command:
+
+```quantize
+python ./main.py -a resnet18_imagenet --action QUANTIZE --man 6 --exp 6 --is_float True
+```
+We support the following models: `resnet18_imagenet`, `resnet34_imagenet`, `resnet50_imagenet`, `resnet101_imagenet`, `googlenet_imagenet`, `inception_imagenet`, `densenet_imagenet`.
+
 ## SPARQ Evaluation
 
 To evaluate the quantized models,  execute the following:
