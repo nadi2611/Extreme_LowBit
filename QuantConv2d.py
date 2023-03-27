@@ -2,7 +2,11 @@ import torch
 import torch.nn as nn
 import cu_gemm_2x48
 import Config as cfg
+import qtorch.quant as quantize
 
+floating = True
+man = 5
+exp = 10
 
 class RoundSTE(torch.autograd.Function):
     @staticmethod
@@ -74,7 +78,9 @@ class UnfoldConv2d(nn.Conv2d):
 
             # Activations quantization
             # Only supports unsigned uniform quantization
-            if torch.min(x) == 0:
+            if floating == True:
+                x_q = self._floating_quantization(x,man,exp)
+            elif torch.min(x) == 0:
                 x_q, x_q_delta = self._uniform_quantization(x, self.max_mean, self._x_bits)
                 x_q = x_q.int().float()         # Just in case
                 assert (x_q.max() <= ((2 ** self._x_bits) - 1) and x_q.min() >= 0)
@@ -83,26 +89,34 @@ class UnfoldConv2d(nn.Conv2d):
                 raise NotImplementedError
 
             # Weights quantization
-            weight_q, weight_q_delta = \
-                self._uniform_symmetric_quantization_per_filter(self.weight,
-                                                                self.weight.data.min(dim=3)[0].min(dim=2)[0].min(dim=1)[0],
-                                                                self.weight.data.max(dim=3)[0].max(dim=2)[0].max(dim=1)[0],
-                                                                self._w_bits)
 
-            weight_q = weight_q.int().float()   # Just in case
-            assert (weight_q.max() <= ((2 ** self._w_bits) / 2 - 1) and weight_q.min() >= (-2 ** self._w_bits) / 2)
+            if floating == True:
+                weight_q = self._floating_quantization(self.weight, man, exp)
+
+            else:
+                weight_q, weight_q_delta = \
+                    self._uniform_symmetric_quantization_per_filter(self.weight,
+                                                                    self.weight.data.min(dim=3)[0].min(dim=2)[0].min(dim=1)[0],
+                                                                    self.weight.data.max(dim=3)[0].max(dim=2)[0].max(dim=1)[0],
+                                                                    self._w_bits)
+
+                weight_q = weight_q.int().float()   # Just in case
+                assert (weight_q.max() <= ((2 ** self._w_bits) / 2 - 1) and weight_q.min() >= (-2 ** self._w_bits) / 2)
 
             # Bias quantization
             if self.bias is None:
                 bias_fp = None
             else:
-                bias_q, bias_q_delta = self._uniform_symmetric_quantization(self.bias,
-                                                                            torch.min(self.bias.data),
-                                                                            torch.max(self.bias.data), self._w_bits)
+                if floating == True:
+                    bias_fp = self._floating_quantization(self.bias, man, exp)
+                else:
+                    bias_q, bias_q_delta = self._uniform_symmetric_quantization(self.bias,
+                                                                                torch.min(self.bias.data),
+                                                                                torch.max(self.bias.data), self._w_bits)
 
-                assert (bias_q.max() <= ((2 ** self._w_bits) / 2 - 1) and bias_q.min() >= (-2 ** self._w_bits) / 2)
+                    assert (bias_q.max() <= ((2 ** self._w_bits) / 2 - 1) and bias_q.min() >= (-2 ** self._w_bits) / 2)
 
-                bias_fp = bias_q * bias_q_delta
+                    bias_fp = bias_q * bias_q_delta
 
         else:
             # The single scalar movement to CUDA may be bad for performance
@@ -111,8 +125,8 @@ class UnfoldConv2d(nn.Conv2d):
             bias_fp = self.bias
 
         if not self._unfold:
-            out = nn.functional.conv2d(x_q * x_q_delta,
-                                       weight_q * weight_q_delta[:, None, None, None].expand_as(weight_q),
+            out = nn.functional.conv2d(x_q ,#* x_q_delta,
+                                       weight_q ,#* weight_q_delta[:, None, None, None].expand_as(weight_q),
                                        bias=bias_fp,
                                        stride=(self.stride[0], self.stride[1]),
                                        padding=(self.padding[0], self.padding[1]), groups=self.groups)
@@ -180,6 +194,10 @@ class UnfoldConv2d(nn.Conv2d):
             val.extend(['-', '-', '-', '-'])
 
         return key, val
+    
+    @staticmethod
+    def _floating_quantization(x, man, exp):
+        return quantize.float_quantize(x,exp,man)
 
     @staticmethod
     def _uniform_quantization(x, x_max, bits):

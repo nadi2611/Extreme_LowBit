@@ -28,6 +28,12 @@ parser.add_argument('--x_bits', default=None, type=int, metavar='N',
                     help='activations quantization bits')
 parser.add_argument('--w_bits', default=None, type=int, metavar='N',
                     help='weights quantization bits')
+parser.add_argument('--is_float', default=None, type=bool, metavar='N',
+                    help='bool to choose if float quantize or not')
+parser.add_argument('--man', default=None, type=int, metavar='N',
+                    help='mantisa for quant')
+parser.add_argument('--exp', default=None, type=int, metavar='N',
+                    help='exponent for quant')
 parser.add_argument('--skip_bn_recal', action='store_true',
                     help='skip BatchNorm recalibration (relevant only to the INFERENCE action)')
 parser.add_argument('--eval', action='store_true',
@@ -47,14 +53,14 @@ parser.add_argument('-v', '--verbosity', default=0, type=int,
 
 
 def quantize_network(arch, dataset, train_gen, test_gen, model_chkp=None,
-                     x_bits=8, w_bits=8, desc=None):
+                     x_bits=8, w_bits=8, desc=None,is_float=False,man=10,exp=5):
     # Initialize log file
     name_str = '{}-{}_quantize_x-{}_w-{}'.format(arch, dataset, x_bits, w_bits)
     name_str = name_str + '_{}'.format(desc) if desc is not None else name_str
     name_str = name_str + '_seed-{}-{}'.format(cfg.SEED_TORCH, cfg.SEED_NP)
 
     cfg.LOG.start_new_log(name=name_str)
-    cfg.LOG.write('desc={}, x_bits={}, w_bits={}'.format(desc, x_bits, w_bits))
+    cfg.LOG.write('desc={}, x_bits={}, w_bits={}, is_float={}, exp={}, man={}'.format(desc, x_bits, w_bits, is_float, exp, man))
 
     # Initialize model
     nn = NeuralNet(arch, dataset, model_chkp=model_chkp)
@@ -157,7 +163,7 @@ def main():
     if args.action == 'QUANTIZE':
         quantize_network(arch, dataset, train_gen, test_gen,
                          model_chkp=model_chkp,
-                         x_bits=args.x_bits, w_bits=args.w_bits, desc=args.desc)
+                         x_bits=args.x_bits, w_bits=args.w_bits, desc=args.desc,is_float=args.is_float,man=args.man, exp=args.exp)
 
     elif args.action == 'INFERENCE':
         inference(arch, dataset, train_gen, test_gen,
